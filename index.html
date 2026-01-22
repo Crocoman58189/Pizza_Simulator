@@ -1,113 +1,314 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portal Bounce Prototype</title>
-<style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #222;
-        display: flex;
-        justify-content: center;
-        align-items: center;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pizzeria Tycoon Pro - Night Cycle</title>
+  <style>
+    :root { --main: #3a261a; --accent: #f1c40f; --red: #e74c3c; --blue: #3498db; --green: #27ae60; }
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #1a100a; color: white; display: flex; justify-content: center; padding: 10px; }
+    .card { background: var(--main); width: 100%; max-width: 450px; padding: 15px; border-radius: 12px; box-shadow: 0 0 25px rgba(0,0,0,0.7); }
+    
+    .map-container { background: #000; padding: 12px; border-radius: 8px; margin: 15px 0; border: 2px solid #5d4037; }
+    .map-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; }
+    .slot { 
+        height: 60px; background: #222; border: 2px solid #ffffff; 
+        border-radius: 6px; display: flex; align-items: center; 
+        justify-content: center; font-size: 28px; cursor: pointer; transition: 0.2s;
     }
-    canvas {
-        background: #111;
-        border: 3px solid #fff;
-    }
-</style>
+    .slot.filled { background: #4e342e; border-color: var(--accent); }
+    .slot.highlight { background: rgba(255, 255, 255, 0.3); animation: blink 0.6s infinite; border-color: var(--accent); }
+    
+    #game, #nameScreen, #saveListScreen, #shop-tab, #arcade-selector, #txt-skip { display: none; }
+    
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .stat { background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #444; font-size: 13px; }
+    
+    button { width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; color: white; }
+    .btn-action { background: #e67e22; font-size: 16px; }
+    .progress-container { background: #222; height: 12px; border-radius: 6px; margin: 10px 0; overflow: hidden; border: 1px solid #444; }
+    .progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.1s; }
+    .placement-info { background: var(--accent); color: black; padding: 10px; font-weight: bold; text-align: center; border-radius: 6px; margin-bottom: 10px; display: none; }
+    
+    .status-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 5px; vertical-align: middle; }
+    .open { background: var(--green); }
+    .closed { background: var(--red); }
+  </style>
 </head>
 <body>
-<canvas id="game" width="400" height="700"></canvas>
-<script>
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
 
-const player = { x: 180, y: 600, w: 40, h: 40, color: 'yellow', vy: 0 };
-const gravity = 0.5;
-const portals = { blue: null, orange: null };
-const keys = {};
+  <div id="langScreen" class="card">
+    <h1 style="text-align:center;">🍕 Pizza Simulator</h1>
+    <button onclick="setLang('fr')" style="background:var(--red);">Français</button>
+    <button onclick="setLang('en')" style="background:var(--blue);">English</button>
+  </div>
 
-const platforms = [
-    { x: 50, y: 650, w: 300, h: 20 },
-    { x: 100, y: 500, w: 200, h: 20 },
-    { x: 50, y: 350, w: 300, h: 20 },
-];
+  <div id="saveListScreen" class="card">
+    <h2 id="txt-my-pizzerias"></h2>
+    <div id="savesContainer"></div>
+    <button onclick="showNewGame()" style="background:var(--green);" id="txt-new-game"></button>
+  </div>
 
-document.addEventListener('keydown', e => keys[e.key] = true);
-document.addEventListener('keyup', e => keys[e.key] = false);
+  <div id="nameScreen" class="card">
+    <h2 id="txt-enter-name"></h2>
+    <input id="pizzeriaName" style="width:100%; padding:12px; box-sizing:border-box; border-radius:8px; border:none;" />
+    <button onclick="createNewGame()" style="background:var(--red);" id="txt-create-btn"></button>
+  </div>
 
-canvas.addEventListener('click', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    if (!portals.blue) portals.blue = { x: mx, y: my };
-    else if (!portals.orange) portals.orange = { x: mx, y: my };
-    else {
-        portals.blue = { ...portals.orange };
-        portals.orange = { x: mx, y: my };
+  <div id="game" class="card">
+    <div id="placementHint" class="placement-info"></div>
+    
+    <div style="display:flex; gap:8px;">
+      <button onclick="showTab('main')" style="background:#555;" id="txt-tab-kitchen"></button>
+      <button onclick="showTab('shop')" style="background:var(--blue);" id="txt-tab-shop"></button>
+    </div>
+
+    <div id="main-tab">
+      <div class="stat-grid">
+        <div class="stat">🕒 <span id="time"></span> <span id="status-tag" class="status-badge"></span></div>
+        <div class="stat">💰 <span id="money"></span>€</div>
+        <div class="stat">🍕 <span id="txt-stock"></span>: <span id="pizzas"></span></div>
+        <div class="stat">🤖 <span id="txt-robots"></span>: <span id="robot-count">0</span></div>
+      </div>
+      <div class="progress-container"><div class="progress-bar" id="pizzaProgress"></div></div>
+      <button class="btn-action" onclick="preparePizza()" id="txt-prep-btn"></button>
+      
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+        <button onclick="sellOne()" style="background:var(--green);" id="txt-sell-one"></button>
+        <button onclick="sellAll()" style="background:#1e8449;" id="txt-sell-all"></button>
+      </div>
+
+      <div class="map-container">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <b style="color:var(--accent); font-size:11px;" id="txt-map-title"></b>
+            <button onclick="toggleDelete()" id="delBtn" style="width:auto; padding:4px 10px; font-size:10px; background:#444;">EDIT 🗑️</button>
+        </div>
+        <div id="mapGrid" class="map-grid"></div>
+      </div>
+
+      <button onclick="skipNight()" style="background:#666; font-size:12px; border:1px solid #fff;" id="txt-skip"></button>
+    </div>
+
+    <div id="shop-tab">
+      <div id="shopItems"></div>
+      <button onclick="showTab('main')" id="txt-back"></button>
+    </div>
+  </div>
+
+  <div id="arcade-selector" class="card" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:100; border:3px solid var(--accent);">
+    <h3 id="txt-arc-title"></h3>
+    <button onclick="confirmArcade('reflex')" style="background:var(--red);">🔴 Reflex</button>
+    <button onclick="confirmArcade('mash')" style="background:var(--blue);">⚡ Speed</button>
+    <button onclick="confirmArcade('luck')" style="background:var(--accent); color:black;">🎰 Luck</button>
+    <button onclick="document.getElementById('arcade-selector').style.display='none'" style="background:#444;">X</button>
+  </div>
+
+  <script>
+    let L = 'en';
+    let saves = []; let cur = null; let cooking = false; let deleteMode = false; let placement = null;
+
+    const UI = {
+      fr: { myPiz: "Mes Pizzerias", new: "+ Nouvelle Pizzeria", name: "Nom du restaurant", create: "Créer", kitchen: "Cuisine", shop: "Boutique", stock: "Stock", robots: "Robots", prep: "🍕 PRÉPARER PIZZA", map: "PLAN DU RESTO", sellOne: "Vendre 1", sellAll: "Vendre TOUT", skip: "🌙 PASSER LA NUIT (Aller à 8h)", back: "RETOUR", hint: "CLIQUE SUR UNE CASE BLANCHE !", arc: "Quel jeu ?", open: "OUVERT", closed: "FERMÉ" },
+      en: { myPiz: "My Pizzerias", new: "+ New Pizzeria", name: "Restaurant Name", create: "Create", kitchen: "Kitchen", shop: "Shop", stock: "Stock", robots: "Robots", prep: "🍕 PREPARE PIZZA", map: "RESTAURANT MAP", sellOne: "Sell 1", sellAll: "Sell ALL", skip: "🌙 SKIP NIGHT (Go to 8am)", back: "BACK", hint: "CLICK ON A WHITE SLOT!", arc: "Which game?", open: "OPEN", closed: "CLOSED" }
+    };
+
+    function setLang(lang) {
+      L = lang;
+      document.getElementById('langScreen').style.display = 'none';
+      const d = localStorage.getItem('piz-v4-saves');
+      saves = d ? JSON.parse(d) : [];
+      showSaves();
     }
-});
 
-function update() {
-    // Gravité
-    player.vy += gravity;
-    player.y += player.vy;
-
-    // Collision plateformes
-    platforms.forEach(p => {
-        if (player.x < p.x + p.w && player.x + player.w > p.x &&
-            player.y + player.h < p.y + p.h && player.y + player.h > p.y &&
-            player.vy > 0) {
-            player.y = p.y - player.h;
-            player.vy = 0;
-        }
-    });
-
-    // Déplacement horizontal
-    if (keys['ArrowLeft']) player.x -= 5;
-    if (keys['ArrowRight']) player.x += 5;
-
-    // Collision avec portails
-    for (let color in portals) {
-        const portal = portals[color];
-        if (portal &&
-            player.x < portal.x + 40 && player.x + player.w > portal.x &&
-            player.y < portal.y + 40 && player.y + player.h > portal.y) {
-            const other = color === 'blue' ? portals.orange : portals.blue;
-            if (other) {
-                player.x = other.x;
-                player.y = other.y;
-            }
-        }
+    function showSaves() {
+      document.getElementById('saveListScreen').style.display = 'block';
+      document.getElementById('txt-my-pizzerias').innerText = UI[L].myPiz;
+      document.getElementById('txt-new-game').innerText = UI[L].new;
+      const c = document.getElementById('savesContainer');
+      c.innerHTML = '';
+      saves.forEach((s, i) => {
+        c.innerHTML += `<div style="background:#444; padding:12px; margin-bottom:8px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+          <div><b>${s.name}</b><br><small>${Math.floor(s.money)}€</small></div>
+          <div>
+            <button onclick="start(${i})" style="width:60px; display:inline; background:var(--green); margin:0;">Go</button>
+            <button onclick="delSave(${i})" style="width:40px; display:inline; background:var(--red); margin:0;">X</button>
+          </div>
+        </div>`;
+      });
     }
-}
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function showNewGame() { 
+      document.getElementById('saveListScreen').style.display='none'; 
+      document.getElementById('nameScreen').style.display='block';
+      document.getElementById('txt-enter-name').innerText = UI[L].name;
+      document.getElementById('txt-create-btn').innerText = UI[L].create;
+    }
 
-    // Plateformes
-    ctx.fillStyle = 'white';
-    platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
+    function delSave(i) { saves.splice(i,1); save(); showSaves(); }
+    
+    function createNewGame() {
+      const n = document.getElementById('pizzeriaName').value || "Luigi";
+      saves.push({ name: n, money: 300, pizzas: 0, hour: 8, minute: 0, items: [] });
+      start(saves.length-1);
+    }
 
-    // Portails
-    if (portals.blue) { ctx.fillStyle = 'blue'; ctx.fillRect(portals.blue.x, portals.blue.y, 40, 40); }
-    if (portals.orange) { ctx.fillStyle = 'orange'; ctx.fillRect(portals.orange.x, portals.orange.y, 40, 40); }
+    function start(i) {
+      cur = i;
+      document.getElementById('saveListScreen').style.display='none';
+      document.getElementById('nameScreen').style.display='none';
+      document.getElementById('game').style.display='block';
+      
+      document.getElementById('txt-tab-kitchen').innerText = UI[L].kitchen;
+      document.getElementById('txt-tab-shop').innerText = UI[L].shop;
+      document.getElementById('txt-prep-btn').innerText = UI[L].prep;
+      document.getElementById('txt-map-title').innerText = UI[L].map;
+      document.getElementById('txt-sell-one').innerText = UI[L].sellOne;
+      document.getElementById('txt-sell-all').innerText = UI[L].sellAll;
+      document.getElementById('txt-skip').innerText = UI[L].skip;
+      document.getElementById('txt-back').innerText = UI[L].back;
+      document.getElementById('txt-stock').innerText = UI[L].stock;
+      document.getElementById('txt-robots').innerText = UI[L].robots;
+      
+      update();
+    }
 
-    // Joueur
-    ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.w, player.h);
-}
+    function update() {
+      const g = saves[cur]; if(!g) return;
+      document.getElementById('time').innerText = `${String(g.hour).padStart(2,'0')}:${String(g.minute).padStart(2,'0')}`;
+      document.getElementById('money').innerText = Math.floor(g.money);
+      document.getElementById('pizzas').innerText = g.pizzas;
+      document.getElementById('robot-count').innerText = g.items.filter(it=>it.type==='robot').length;
+      
+      // GESTION DU STATUT OUVERT/FERME ET BOUTON SKIP
+      const isClosed = (g.hour >= 20 || g.hour < 8);
+      const tag = document.getElementById('status-tag');
+      const skipBtn = document.getElementById('txt-skip');
+      
+      if (isClosed) {
+        tag.innerText = UI[L].closed;
+        tag.className = "status-badge closed";
+        skipBtn.style.display = "block"; // Affiche le bouton la nuit
+      } else {
+        tag.innerText = UI[L].open;
+        tag.className = "status-badge open";
+        skipBtn.style.display = "none"; // Cache le bouton le jour
+      }
 
-function gameLoop() {
-    update();
-    draw();
-    requestAnimationFrame(gameLoop);
-}
+      drawMap();
+    }
 
-gameLoop();
-</script>
+    function drawMap() {
+      const g = saves[cur]; const grid = document.getElementById('mapGrid');
+      grid.innerHTML = '';
+      for(let i=0; i<20; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        const item = g.items.find(it => it.pos === i);
+        if(item) {
+          slot.innerText = item.type === 'staff' ? '👨‍🍳' : (item.type === 'robot' ? '🤖' : '🕹️');
+          slot.className += ' filled';
+          if(deleteMode) {
+            slot.className += ' deleting';
+            slot.onclick = () => { g.items = g.items.filter(it=>it.pos!==i); update(); save(); };
+          }
+        } else if(placement) {
+          slot.className += ' highlight';
+          slot.onclick = () => {
+            g.money -= placement.cost;
+            g.items.push({ pos: i, type: placement.type, gameType: placement.gameType });
+            placement = null; document.getElementById('placementHint').style.display='none';
+            update(); save();
+          };
+        }
+        grid.appendChild(slot);
+      }
+    }
+
+    function preparePizza() {
+      if(cooking) return; cooking = true; let p = 0;
+      const b = document.getElementById('pizzaProgress');
+      const it = setInterval(() => {
+        p += 10; b.style.width = p+'%';
+        if(p >= 100) { clearInterval(it); cooking=false; b.style.width='0%'; saves[cur].pizzas++; update(); save(); }
+      }, 100);
+    }
+
+    function sellOne() {
+        const g = saves[cur];
+        if(g.pizzas > 0 && g.hour >= 8 && g.hour < 20) { g.pizzas--; g.money += 20; update(); save(); }
+    }
+
+    function sellAll() { 
+        const g = saves[cur]; 
+        if(g.hour >= 8 && g.hour < 20 && g.pizzas > 0) { g.money += g.pizzas*20; g.pizzas=0; update(); save(); } 
+    }
+
+    function showTab(t) {
+      document.getElementById('main-tab').style.display = t==='main'?'block':'none';
+      document.getElementById('shop-tab').style.display = t==='shop'?'block':'none';
+      if(t==='shop') renderShop();
+    }
+
+    function renderShop() {
+      const c = document.getElementById('shopItems'); c.innerHTML = '';
+      const items = [
+        {id:'staff',n: (L==='fr'?'👨‍🍳 Chef':'👨‍🍳 Cook'),p:150},
+        {id:'arcade',n:(L==='fr'?'🕹️ Borne':'🕹️ Arcade'),p:200},
+        {id:'robot',n:(L==='fr'?'🤖 Robot':'🤖 Robot'),p:600}
+      ];
+      items.forEach(it => {
+        c.innerHTML += `<div style="background:#4e342e; padding:12px; margin-bottom:8px; border-radius:8px; border-left:4px solid var(--accent);">
+          <b>${it.n}</b> - ${it.p}€ <button onclick="buy('${it.id}',${it.p})" style="background:var(--green); width:90px; float:right; margin:0; padding:5px;">Buy</button>
+          <div style="clear:both;"></div>
+        </div>`;
+      });
+    }
+
+    function buy(id, p) {
+      if(saves[cur].money < p) return alert(L==='fr'?"Pas assez !":"Not enough!");
+      if(id==='arcade') {
+        document.getElementById('txt-arc-title').innerText = UI[L].arc;
+        document.getElementById('arcade-selector').style.display='block';
+      } else {
+        placement = {type:id, cost:p}; 
+        showTab('main'); 
+        document.getElementById('placementHint').innerText = UI[L].hint;
+        document.getElementById('placementHint').style.display='block'; 
+        drawMap();
+      }
+    }
+
+    function confirmArcade(gt) {
+      document.getElementById('arcade-selector').style.display='none';
+      placement = {type:'arcade', gameType:gt, cost:200};
+      showTab('main'); 
+      document.getElementById('placementHint').innerText = UI[L].hint;
+      document.getElementById('placementHint').style.display='block'; 
+      drawMap();
+    }
+
+    function toggleDelete() { deleteMode = !deleteMode; document.getElementById('delBtn').style.background = deleteMode? 'var(--red)' : '#444'; drawMap(); }
+    function skipNight() { saves[cur].hour=8; saves[cur].minute=0; update(); save(); }
+    function save() { if(cur !== null) localStorage.setItem('piz-v4-saves', JSON.stringify(saves)); }
+
+    // CYCLE DE TEMPS ET PRODUCTION
+    setInterval(() => {
+      if(cur===null) return; 
+      const g = saves[cur]; 
+      
+      g.minute += 2;
+      if(g.minute>=60) { g.minute=0; g.hour++; if(g.hour>=24) g.hour=0; }
+      
+      // Production Auto toutes les 30 minutes (00 ou 30)
+      if (g.minute === 0 || g.minute === 30) {
+        const sc = g.items.filter(it=>it.type==='staff').length;
+        const rc = g.items.filter(it=>it.type==='robot').length;
+        if(g.hour >= 8 && g.hour < 20) g.pizzas += sc;
+        g.pizzas += rc;
+      }
+      
+      update();
+    }, 1000);
+  </script>
 </body>
 </html>
